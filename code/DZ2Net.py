@@ -1,10 +1,16 @@
 
 import networkx as nx
+from networkx.algorithms.community import girvan_newman
+from scipy.spatial.distance import squareform
+from scipy.cluster.hierarchy import linkage, dendrogram
 import pandas as pd
 import os
+import matplotlib
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import numpy as np
 from collections import Counter
+from networkx.linalg.laplacianmatrix import laplacian_matrix
 filePath = os.path.join(os.path.dirname(__file__), 'data-set', 'Results 2_anonymized.csv')
 
 data = pd.read_csv(filePath)
@@ -61,45 +67,77 @@ print("Graph is connected?", nx.is_connected(graph))
 deg_centrality = nx.degree_centrality(graph)
 closeness_centrality = nx.closeness_centrality(graph)
 betweenness_centrality = nx.betweenness_centrality(graph)
+def degree_centralization(graph):
+    degrees = dict(graph.degree())
+    max_deg = max(degrees.values())
+    n = len(degrees)
+
+    return sum(max_deg - d for d in degrees.values()) / ((n - 1) * (n - 2))
+
+C_real = degree_centralization(graph)
+print("Centralization:", round(C_real, 3))
 
 # Question 4
 
 N = graph.number_of_nodes()
 p = graph.number_of_edges()
-G_er = nx.erdos_renyi_graph(N, p/(N*(N-1)/2))
-G_ba = nx.barabasi_albert_graph(N, p // N)
 
-avg_clust_er = nx.average_clustering(G_er)
-print(f"ER graph clustering coefficient: {avg_clust_er}")
-avg_clust_ba = nx.average_clustering(G_ba)
-print(f"BA graph clustering coefficient: {avg_clust_ba}")
+trials = 10
+er_clusts = []
+er_trans = []
+ba_clusts = []
+ba_trans = []
+
+for i in range(trials):
+
+    prob = p / (N * (N - 1) / 2) if N > 1 else 0
+    G_er = nx.erdos_renyi_graph(N, prob)
+    er_clusts.append(nx.average_clustering(G_er))
+    er_trans.append(nx.transitivity(G_er))
+
+    m = max(1, int(p // N))
+    m = min(m, N - 1) if N > 1 else 1
+    G_ba = nx.barabasi_albert_graph(N, m)
+    ba_clusts.append(nx.average_clustering(G_ba))
+    ba_trans.append(nx.transitivity(G_ba))
+
+avg_clust_er = sum(er_clusts) / trials
+avg_clust_ba = sum(ba_clusts) / trials
+avg_trans_er = sum(er_trans) / trials
+avg_trans_ba = sum(ba_trans) / trials
+
+print(f"ER graph average clustering coefficient (over {trials} trials): {avg_clust_er}")
+print(f"BA graph average clustering coefficient (over {trials} trials): {avg_clust_ba}")
 avg_clust = nx.average_clustering(graph)
 print(f'Average clustering coefficient: {avg_clust}\n')
 
-global_clust_er = nx.transitivity(G_er)
-print(f'Global clustering for ER graph: {global_clust_er}')
-global_clust_ba = nx.transitivity(G_ba)
-print(f'Global clustering for BA graph: {global_clust_ba}')
+print(f'ER graph average transitivity (over {trials} trials): {avg_trans_er}')
+print(f'BA graph average transitivity (over {trials} trials): {avg_trans_ba}')
 global_clust = nx.transitivity(graph)
 print(f'Global coefficient: {global_clust}')
 
 clustering = nx.clustering(graph)
 
 plt.hist(list(clustering.values()), bins=10)
-plt.title("Clustering Coefficient Distribution")
+plt.title("Raspodela lokalnih koeficijenata klasterizacije")
 plt.show()
 
 avg_clust = nx.average_clustering(graph)
 
 # Question 5
 
-# High local clustering coefficient and low average 
-# shortest path length indicate small-world properties.
+L_real = nx.average_shortest_path_length(graph)
+L_er = nx.average_shortest_path_length(G_er)
+L_sf = nx.average_shortest_path_length(G_ba)
+
+print(f'Average shortest path length ER: {L_er}')
+print(f'Average shortest path length SF: {L_sf}')
+print(f'Average shortest path length real: {L_real}')
 
 # Question 6
 
 r = nx.degree_assortativity_coefficient(graph)
-print(f'Degree assortativity coefficient: {r}')
+print(f'\nDegree assortativity coefficient: {r}')
 
 degrees = dict(graph.degree())
 
@@ -195,13 +233,126 @@ eig_n = normalize(eigenvector_centrality)
 heuristic = {}
 
 for v in graph.nodes():
-    heuristic[v] = (
-        0.3 * deg_n[v] +
-        0.2 * close_n[v] +
-        0.2 * between_n[v] +
-        0.3 * eig_n[v]
+    heuristic[v] = round(
+        0.166 * deg_n[v] +
+        0.166 * close_n[v] +
+        0.5 * between_n[v] +
+        0.166 * eig_n[v],
+        2
     )
 
-top5 = sorted(heuristic.items(), key=lambda x: x[1], reverse=True)[:5]
+top5 = sorted(heuristic.items(), key=lambda x: x[1], reverse=True)[:15]
 print("\nTop 5 nodes by heuristic centrality:")
 print(top5)
+
+all_nodes = sorted(graph.nodes())
+
+deg_vals = [deg_n[node] for node in all_nodes]
+close_vals = [close_n[node] for node in all_nodes]
+between_vals = [between_n[node] for node in all_nodes]
+eig_vals = [eig_n[node] for node in all_nodes]
+
+fig, ax = plt.subplots(figsize=(16, 6))
+
+x = np.arange(len(all_nodes))
+width = 0.2
+
+bars1 = ax.bar(x - 1.5*width, deg_vals, width, label='Degree Centrality', alpha=0.8)
+bars2 = ax.bar(x - 0.5*width, close_vals, width, label='Closeness Centrality', alpha=0.8)
+bars3 = ax.bar(x + 0.5*width, between_vals, width, label='Betweenness Centrality', alpha=0.8)
+bars4 = ax.bar(x + 1.5*width, eig_vals, width, label='Eigenvector Centrality', alpha=0.8)
+
+ax.set_xlabel('Čvorovi', fontsize=12)
+ax.set_ylabel('Normalizovana vrednost', fontsize=12)
+ax.set_title('Poređenje 4 centralnosti za sve čvorove', fontsize=14, fontweight='bold')
+ax.set_xticks(x)
+ax.set_xticklabels(all_nodes, rotation=45, ha='right', fontsize=8)
+ax.legend(fontsize=10)
+ax.grid(axis='y', alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+
+#Question 13
+
+graph2 = nx.Graph()
+graph2.add_nodes_from(unique_students_df[0])
+edges_with_weights = []
+
+for _, row in data.iterrows():
+    acter1 = row['acter1']
+    acter2 = row['acter2']
+    weight = row['lines_matched']
+    edges_with_weights.append((acter1, acter2, weight))
+
+graph2.add_weighted_edges_from(edges_with_weights)
+
+L = laplacian_matrix(graph2).astype(float).todense()
+
+eigenvalues = np.sort(np.real(np.linalg.eigvals(L)))
+
+plt.figure(figsize=(8,5))
+plt.plot(range(1, len(eigenvalues)+1), eigenvalues, marker='o')
+plt.xlabel("Index")
+plt.ylabel("Eigenvalue")
+plt.title("Spectral Analysis: Laplacian Eigenvalues")
+plt.grid(True)
+plt.show()
+
+eigengaps = np.diff(eigenvalues)
+predicted_communities = np.argmax(eigengaps) + 1
+
+print("Eigenvalues:", eigenvalues)
+print("Susedne razlike (eigengap):", eigengaps)
+print(f"Predlog broja komuna na osnovu eigengap: {predicted_communities}")
+
+num_connected_components = np.sum(np.isclose(eigenvalues, 0))
+print(f"Broj povezanih komponenti (nulti eigenvalues): {num_connected_components}")
+
+
+comp_gen = girvan_newman(graph2)
+
+levels = []
+for communities in comp_gen:
+    level = [list(c) for c in communities]
+    levels.append(level)
+    if len(levels) >= graph2.number_of_nodes() - 1:  
+        break
+
+nodes = list(graph2.nodes())
+n = len(nodes)
+dist_matrix = np.zeros((n, n))
+
+for level_idx, communities in enumerate(levels):
+    for i, comm1 in enumerate(communities):
+        for j, comm2 in enumerate(communities):
+            if i >= j:
+                continue
+            for node1 in comm1:
+                for node2 in comm2:
+                    idx1 = nodes.index(node1)
+                    idx2 = nodes.index(node2)
+                   
+                    if dist_matrix[idx1, idx2] == 0:
+                        dist_matrix[idx1, idx2] = level_idx + 1
+                        dist_matrix[idx2, idx1] = level_idx + 1
+
+max_level = len(levels)
+if max_level == 0:
+    max_level = 1
+for i in range(n):
+    for j in range(i + 1, n):
+        if dist_matrix[i, j] == 0:
+            dist_matrix[i, j] = max_level + 1
+            dist_matrix[j, i] = max_level + 1
+
+condensed_dist = squareform(dist_matrix)
+
+Z = linkage(condensed_dist, method='average')
+
+plt.figure(figsize=(12, 6))
+dendrogram(Z, labels=nodes, leaf_rotation=90)
+plt.title("Girvan-Newman dendrogram")
+plt.xlabel("Čvorovi")
+plt.ylabel("Level of split")
+plt.show()
