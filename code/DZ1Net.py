@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import networkx as nx
+import matplotlib.pyplot as plt
 
 filePath = 'data-set/Results 1_anonymized.csv'
 
@@ -40,41 +41,223 @@ print(student_similarity.sum().sort_values(by='lines_matched', ascending=False))
 # SECTION_2 : Research questions
 
 """
-    Start by creating a undirected graph using networkX.
-    Graph is undirected.
+    Start by creating a graph using networkX.
+    Graph is directed. Edges are weighted using actor's percentage in a pair.
     Nodes represent students, Edges represent connection between two students.
+    If a pair exists, we create a edge directed from actor1 to actor2 and edge from actor2 to actor1.
+    Since the pairs are 
 """
 
 
-graph = nx.Graph()
+graph = nx.DiGraph()
 
 # First add each student as a node (44 unique students)
 graph.add_nodes_from(unique_students_df[0])
 
-# Now we add edges (if a row that connects two students exists, we add it as an edge)
-set_edges = set()
-for _, acter1, acter2 in data[['acter1', 'acter2']].itertuples():
-    set_edges.add((acter1, acter2))
-graph.add_edges_from(set_edges)
+# Then proceed by adding edges in a already described way
+for _, row in data.iterrows():
+    graph.add_edge(row['acter1'], row['acter2'], weight=row['acter1_percentage'])
+    graph.add_edge(row['acter2'], row['acter1'], weight=row['acter2_percentage'])
+
+print(f'Number of nodes in graph: {graph.number_of_nodes()}')
+print(f'Number of edges in graph: {graph.number_of_edges()}')
 
 # print(graph) -> Graph with 44 nodes and 250 edges
 
 # Question 1
 network_density = nx.density(graph)
-print(f'Network density: {network_density}')
+print(f"\n--- Question 1 Results ---")
+print(f'Network density: {network_density}\n')
 
 # Question 2
 # Calculate average_shortest_path_length and network diameter
-average_shortest_path_length = nx.average_shortest_path_length(graph)
-print(f'Average shortest path length: {average_shortest_path_length}')
-
-diameter = nx.diameter(graph)
-print(f'Diameter: {diameter}')
 
 # Question 3
 # We know graph isn't fully connected, because of the network density (it's not 1)
 # We can calculate number of connections and the length for each component
 
-num_of_connections = nx.number_connected_components(graph)
-print(f'Number of connected components: {num_of_connections}')
+# 1. Get all Weakly Connected Components (WCC)
+wcc = list(nx.weakly_connected_components(graph))
+wcc_sizes = [len(c) for c in wcc]
+wcc_sizes.sort(reverse=True)
 
+# Note: From weakly connected components we can see there is only one component, and it contains all the nodes
+# so special analysis and search for giant component isn't necessary, but we have done it for learning purposes
+
+# 2. Identify the Giant Component
+giant_component_nodes = max(nx.weakly_connected_components(graph), key=len)
+G_giant = graph.subgraph(giant_component_nodes)
+
+# 3. Calculate Q2 Metrics (Distance & Diameter) on the Giant Component
+avg_dist = nx.average_shortest_path_length(G_giant)
+diameter = nx.diameter(G_giant)
+
+
+# 4. Calculate Centralization (Degree Centralization)
+def degree_centralization(graph):
+    degrees = dict(graph.degree())
+    max_deg = max(degrees.values())
+    n = len(graph.nodes())
+    denominator = (n - 1) * (n - 2)
+    if denominator <= 0: return 0
+    sum_diff = sum(max_deg - d for d in degrees.values())
+    return sum_diff / denominator
+
+
+centralization = degree_centralization(graph)
+
+print(f"--- Question 3 Results ---")
+print(f"Number of Components: {len(wcc)}")
+print(f"Component Sizes: {wcc_sizes}")
+print(f"Is there a Giant Component? {'Yes' if wcc_sizes[0] > (44/2) else 'No'}")
+print(f"Network Centralization: {centralization:.4f}")
+
+print(f"\n--- Question 2 Results (based on Giant Component) ---")
+print(f"Average Distance: {avg_dist:.4f}")
+print(f"Network Diameter: {diameter}")
+
+# Question 4
+# What is the average and what is the global clustering coefficient of the network?
+# What is the distribution of the local clustering coefficient of its nodes?
+# Is the clustering pronounced or not?
+# The answer is given by comparison with randomly generated Erdos-Renyi and scale free networks of the same dimensions.
+
+# Question 5
+# By calculating relevant network metrics, formally explain whether the network exhibits small-world properties.
+
+# 1. Calculate for your Plagiarism Graph
+avg_clust_real = nx.average_clustering(graph)
+global_clust_real = nx.transitivity(graph)
+local_clust_values = list(nx.clustering(graph).values())
+
+# 2. Generate Erdős-Rényi (Random)
+# Probability p = edges / possible_edges
+n = graph.number_of_nodes()
+e = graph.number_of_edges()
+p = e / (n * (n - 1))
+random_graph = nx.fast_gnp_random_graph(n, p, directed=True)
+avg_clust_rand = nx.average_clustering(random_graph)
+
+# 3. Generate Scale-Free (Barabási–Albert)
+# Note: BA is undirected by default, we convert to directed for comparison
+m = round(e / n)  # Average edges per new node
+scale_free_graph = nx.barabasi_albert_graph(n, m).to_directed()
+avg_clust_sf = nx.average_clustering(scale_free_graph)
+
+print(f"\n--- Question 4 and 5 Results ---")
+print(f"Real Graph - Avg Clustering: {avg_clust_real:.4f}, Global: {global_clust_real:.4f}")
+print(f"Random Graph - Avg Clustering: {avg_clust_rand:.4f}")
+print(f"Scale-Free Graph - Avg Clustering: {avg_clust_sf:.4f}")
+
+# print(f"Local clust values: {local_clust_values}")
+# 4. Plotting the Local Distribution
+plt.hist(local_clust_values, bins=10, color='skyblue', edgecolor='black')
+plt.title("Distribution of Local Clustering Coefficients")
+plt.xlabel("Clustering Coefficient")
+plt.ylabel("Frequency")
+plt.savefig("pictures\Distribution of Local Clustering Coefficients DZ1Net.png", bbox_inches='tight')
+plt.close()
+
+# Question 6
+# Perform an assortative analysis by node degree and give an answer, whether, and to what extent assortative mixing is expressed.
+# Note that node degree is a numerical and not a categorical variable and choose an adequate metric for the measure of assortative mixing.
+# Attach the visualization.
+
+# 1. Calculate the Degree Assortativity Coefficient (r)
+# This measures the correlation between the degrees of nodes at either end of an edge.
+assortativity_r = nx.degree_assortativity_coefficient(graph)
+
+# 2. Visualization: Average Neighbor Degree vs. Node Degree
+# This scatter plot is the standard way to visualize assortative mixing.
+degrees = dict(graph.degree())
+avg_neighbor_degrees = nx.average_neighbor_degree(graph)
+
+x = [degrees[n] for n in graph.nodes()]
+y = [avg_neighbor_degrees[n] for n in graph.nodes()]
+
+plt.figure(figsize=(10, 6))
+plt.scatter(x, y, alpha=0.7, c='royalblue', edgecolors='k')
+# Add a trend line to visualize the correlation
+z = np.polyfit(x, y, 1)
+p = np.poly1d(z)
+plt.plot(x, p(x), "r--", alpha=0.8, label=f"Trend (r={assortativity_r:.4f})")
+plt.title("Assortative Mixing by Node Degree")
+plt.xlabel("Node Degree (k)")
+plt.ylabel("Average Neighbor Degree (knn)")
+plt.legend()
+plt.grid(True, linestyle='--', alpha=0.6)
+plt.savefig(f"pictures\Assortativity_Degree_Analysis DZ1Net.png", bbox_inches='tight')
+plt.close()
+
+print(f"\n--- Question 6 Results ---")
+print(f"Assortativity Coefficient (r): {assortativity_r:.4f}\n")
+
+
+# Question 7
+# What is the distribution of nodes by degree and does it follow a power law distribution?
+# To receive full points for this question, it is necessary to formally support the answer mathematically.
+
+import powerlaw
+
+# 1. Get degrees
+degrees = [d for n, d in graph.degree()]
+
+# 2. Fit the data
+fit = powerlaw.Fit(degrees, discrete=True)
+
+# 3. Get formal metrics
+alpha = fit.power_law.alpha  # The gamma exponent
+xmin = fit.power_law.xmin  # The threshold where power law starts
+
+# Compare Power Law vs Exponential distribution
+R, p_value = fit.distribution_compare('power_law', 'exponential', normalized_ratio=True)
+
+# 4. Visualization
+plt.figure(figsize=(10, 6))
+fig = fit.plot_pdf(color='b', linewidth=2, label='Empirical Data')
+fit.power_law.plot_pdf(color='r', linestyle='--', ax=fig, label='Power Law Fit')
+plt.title(f"Degree Distribution & Power Law Fit (alpha={alpha:.2f})")
+plt.xlabel("Degree (k)")
+plt.ylabel("P(k)")
+plt.legend()
+plt.savefig(f"pictures\Degree_Distribution_PowerLaw DZNet1.png", bbox_inches='tight')
+plt.close()
+
+print(f"\n--- Question 7 Results ---")
+print(f"Alpha (gamma): {alpha}")
+print(f"Xmin: {xmin}")
+print(f"Likelihood Ratio (R): {R}")
+print(f"p-value: {p_value}")
+
+
+# Question 8
+# Conduct degree centrality, closeness and relational centrality analyses.
+# Give an overview of the most important actors for each of them.
+
+# 1. Calculate Centralities
+degree_cent = nx.degree_centrality(graph)
+closeness_cent = nx.closeness_centrality(graph)
+betweenness_cent = nx.betweenness_centrality(graph)
+
+# 2. Combine into a DataFrame for easy viewing
+centrality_data = {
+    'Node': list(graph.nodes()),
+    'Degree': list(degree_cent.values()),
+    'Closeness': list(closeness_cent.values()),
+    'Betweenness': list(betweenness_cent.values())
+}
+
+df = pd.DataFrame(centrality_data)
+
+# 3. Identify Top 3 Actors for each metric
+top_degree = df.nlargest(3, 'Degree')
+top_closeness = df.nlargest(3, 'Closeness')
+top_betweenness = df.nlargest(3, 'Betweenness')
+
+print(f"\n--- Question 8 Results ---")
+print("--- Top Acters by Degree ---")
+print(top_degree[['Node', 'Degree']])
+print("\n--- Top Acters by Closeness ---")
+print(top_closeness[['Node', 'Closeness']])
+print("\n--- Top Acters by Betweenness ---")
+print(top_betweenness[['Node', 'Betweenness']])
