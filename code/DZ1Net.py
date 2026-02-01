@@ -261,3 +261,67 @@ print("\n--- Top Acters by Closeness ---")
 print(top_closeness[['Node', 'Closeness']])
 print("\n--- Top Acters by Betweenness ---")
 print(top_betweenness[['Node', 'Betweenness']])
+
+
+# Question 9
+# Who are the most important actors by centrality according to their own vector or equivalent metrics (hub score, authority score) if the network is modeled as a directed graph?
+# What does that tell us about them?
+
+# 1. Calculate Hub and Authority scores
+# This automatically accounts for the directed nature of your similarity graph
+hubs, authorities = nx.hits(graph)
+
+# 2. Organize the data
+hits_df = pd.DataFrame({
+    'Node': list(hubs.keys()),
+    'Hub_Score': list(hubs.values()),
+    'Authority_Score': list(authorities.values())
+})
+
+# 3. Get the top 3 for each
+top_authorities = hits_df.nlargest(3, 'Authority_Score')
+top_hubs = hits_df.nlargest(3, 'Hub_Score')
+
+print(f"\n--- Question 9 Results ---")
+print("--- Top Authorities (The Sources) ---")
+print(top_authorities[['Node', 'Authority_Score']])
+print("\n--- Top Hubs (The Distributors) ---")
+print(top_hubs[['Node', 'Hub_Score']])
+
+
+# Question 10
+# Based on the previous two questions, propose and construct a heuristic (composite measure of centrality) to find the most important actors and find them.
+# Pay attention to the type of network being analyzed (directed or undirected) and, accordingly, adjust how different network metrics affect the heuristics.
+
+import pandas as pd
+import networkx as nx
+
+# 1. Calculate the core metrics for the directed graph
+in_degree = nx.in_degree_centrality(graph)
+hubs, authorities = nx.hits(graph)
+
+# 2. Create the unified DataFrame
+final_eval = pd.DataFrame({
+    'Node': list(graph.nodes()),
+    'InDegree': [in_degree[node] for node in graph.nodes()],
+    'Authority': [authorities[node] for node in graph.nodes()]
+})
+
+# 3. Normalize to a 0-1 scale (Min-Max Scaling)
+# This ensures that both metrics contribute equally
+def normalize(series):
+    return (series - series.min()) / (series.max() - series.min())
+
+final_eval['InDeg_Norm'] = normalize(final_eval['InDegree'])
+final_eval['Auth_Norm'] = normalize(final_eval['Authority'])
+
+# 4. Calculate the Composite Source Index (CSI)
+final_eval['CSI_Score'] = (final_eval['InDeg_Norm'] + final_eval['Auth_Norm']) / 2
+
+# 5. Get the Top 5
+top_final = final_eval.sort_values(by='CSI_Score', ascending=False).head(5)
+print(f"\n--- Question 10 Results ---")
+print(top_final[['Node', 'CSI_Score', 'InDeg_Norm', 'Auth_Norm']])
+
+# In order to answer other questions, we export the graph we created and worked on into a gephi-ready format
+nx.write_gexf(graph, "gephi\DZ1Net_gephi.gexf")
