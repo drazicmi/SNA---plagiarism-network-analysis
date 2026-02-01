@@ -37,13 +37,35 @@ print(f'Acter percentages are ints and between 0-100? {acter1_is_int and acter2_
 
 unique_students_df = pd.concat([data['acter1'], data['acter2']]).to_frame().drop_duplicates()
 
-graph = nx.Graph()
+# CREATE DIRECTED WEIGHTED GRAPH
+# For each pair: edge from acter1 to acter2 with weight acter1_percentage
+#                edge from acter2 to acter1 with weight acter2_percentage
+
+graph = nx.DiGraph()
 graph.add_nodes_from(unique_students_df[0])
-set_edges = set()
-for _, acter1, acter2 in data[['acter1', 'acter2']].itertuples():
-    set_edges.add((acter1, acter2))
-graph.add_edges_from(set_edges)
-print(f'Graph created. Number of nodes: {graph.number_of_nodes()}, number of edges: {graph.number_of_edges()}')
+
+edges_with_weights = []
+for _, row in data.iterrows():
+    acter1 = row['acter1']
+    acter2 = row['acter2']
+    acter1_weight = row['acter1_percentage']
+    acter2_weight = row['acter2_percentage']
+    
+    # Add directed edge from acter1 to acter2 with acter1_percentage as weight
+    edges_with_weights.append((acter1, acter2, acter1_weight))
+    # Add directed edge from acter2 to acter1 with acter2_percentage as weight
+    edges_with_weights.append((acter2, acter1, acter2_weight))
+
+graph.add_weighted_edges_from(edges_with_weights)
+print(f'Directed weighted graph created. Number of nodes: {graph.number_of_nodes()}, number of edges: {graph.number_of_edges()}')
+
+# Export graph to Gephi format
+gephi_dir = os.path.join(os.path.dirname(__file__), 'gephi')
+if not os.path.exists(gephi_dir):
+    os.makedirs(gephi_dir)
+gephi_path = os.path.join(gephi_dir, 'DZ2Net_gephi.gexf')
+nx.write_gexf(graph, gephi_path)
+print(f"Graph exported to {gephi_path}")
 
 nx.draw(graph, with_labels=True)
 plt.show()
@@ -62,7 +84,7 @@ print(f'Network diameter: {diameter}')
 
 # Question 3
 
-print("Graph is connected?", nx.is_connected(graph))
+print("Graph is connected?", nx.is_weakly_connected(graph))
 
 deg_centrality = nx.degree_centrality(graph)
 closeness_centrality = nx.closeness_centrality(graph)
@@ -118,8 +140,12 @@ print(f'Global coefficient: {global_clust}')
 
 clustering = nx.clustering(graph)
 
-plt.hist(list(clustering.values()), bins=10)
+plt.hist(list(clustering.values()), bins=10, color='skyblue', edgecolor='black')
 plt.title("Raspodela lokalnih koeficijenata klasterizacije")
+plt.xlabel("Koeficijent klasterizacije")
+plt.ylabel("Frekvencija")
+plt.grid(axis='y', alpha=0.3)
+plt.tight_layout()
 plt.show()
 
 avg_clust = nx.average_clustering(graph)
@@ -195,7 +221,7 @@ deg_centrality = {k: round(v, 2) for k, v in deg_centrality.items()}
 closeness_centrality = {k: round(v, 2) for k, v in closeness_centrality.items()}
 betweenness_centrality = {k: round(v, 2) for k, v in betweenness_centrality.items()}
 
-def top_n(centrality_dict, n=5):
+def top_n(centrality_dict, n=10):
     return sorted(centrality_dict.items(), key=lambda x: x[1], reverse=True)[:n]
 
 print("Top 5 degree centrality:")
@@ -275,51 +301,39 @@ plt.show()
 
 #Question 13
 
-graph2 = nx.Graph()
-graph2.add_nodes_from(unique_students_df[0])
-edges_with_weights = []
-
-for _, row in data.iterrows():
-    acter1 = row['acter1']
-    acter2 = row['acter2']
-    weight = row['lines_matched']
-    edges_with_weights.append((acter1, acter2, weight))
-
-graph2.add_weighted_edges_from(edges_with_weights)
-
-L = laplacian_matrix(graph2).astype(float).todense()
+L = laplacian_matrix(graph).astype(float).todense()
 
 eigenvalues = np.sort(np.real(np.linalg.eigvals(L)))
 
 plt.figure(figsize=(8,5))
 plt.plot(range(1, len(eigenvalues)+1), eigenvalues, marker='o')
-plt.xlabel("Index")
-plt.ylabel("Eigenvalue")
-plt.title("Spectral Analysis: Laplacian Eigenvalues")
+plt.xlabel("Indeks")
+plt.ylabel("Sopstvena vrednost")
+plt.title("Spektralna analiza: Sopstvene vrednosti Laplasijana")
 plt.grid(True)
 plt.show()
 
 eigengaps = np.diff(eigenvalues)
 predicted_communities = np.argmax(eigengaps) + 1
 
-print("Eigenvalues:", eigenvalues)
+print("Svojstvene vrednosti:", eigenvalues)
 print("Susedne razlike (eigengap):", eigengaps)
 print(f"Predlog broja komuna na osnovu eigengap: {predicted_communities}")
 
 num_connected_components = np.sum(np.isclose(eigenvalues, 0))
-print(f"Broj povezanih komponenti (nulti eigenvalues): {num_connected_components}")
+print(f"Broj povezanih komponenti (nula sopstvene vrednosti): {num_connected_components}")
 
 
-comp_gen = girvan_newman(graph2)
+comp_gen = girvan_newman(graph)
 
 levels = []
 for communities in comp_gen:
     level = [list(c) for c in communities]
     levels.append(level)
-    if len(levels) >= graph2.number_of_nodes() - 1:  
+    if len(levels) >= graph.number_of_nodes() - 1:  
         break
 
-nodes = list(graph2.nodes())
+nodes = list(graph.nodes())
 n = len(nodes)
 dist_matrix = np.zeros((n, n))
 
@@ -350,9 +364,11 @@ condensed_dist = squareform(dist_matrix)
 
 Z = linkage(condensed_dist, method='average')
 
-plt.figure(figsize=(12, 6))
-dendrogram(Z, labels=nodes, leaf_rotation=90)
-plt.title("Girvan-Newman dendrogram")
-plt.xlabel("Čvorovi")
-plt.ylabel("Level of split")
+plt.figure(figsize=(20, 8))
+dendrogram(Z, labels=nodes, leaf_rotation=90, leaf_font_size=8)
+plt.title("Girvan-Newman dendrogram", fontsize=14)
+plt.xlabel("Čvorovi", fontsize=12)
+plt.ylabel("Nivo razdvajanja", fontsize=12)
+plt.tight_layout()
+plt.subplots_adjust(bottom=0.2)
 plt.show()
