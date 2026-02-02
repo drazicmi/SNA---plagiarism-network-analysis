@@ -301,15 +301,26 @@ plt.show()
 
 #Question 13
 
-L = laplacian_matrix(graph).astype(float).todense()
+# Create undirected graph with average weight for spectral analysis
+graph_undirected = nx.Graph()
+graph_undirected.add_nodes_from(unique_students_df[0])
+
+for _, row in data.iterrows():
+    acter1 = row['acter1']
+    acter2 = row['acter2']
+    avg_weight = 2 / (row['acter1_percentage'] + row['acter2_percentage'])
+    
+    graph_undirected.add_edge(acter1, acter2, weight=avg_weight)
+
+L = laplacian_matrix(graph_undirected).astype(float).todense()
 
 eigenvalues = np.sort(np.real(np.linalg.eigvals(L)))
 
 plt.figure(figsize=(8,5))
-plt.plot(range(1, len(eigenvalues)+1), eigenvalues, marker='o')
+plt.plot(range(1, 11), eigenvalues[:10], marker='o')
 plt.xlabel("Indeks")
 plt.ylabel("Sopstvena vrednost")
-plt.title("Spektralna analiza: Sopstvene vrednosti Laplasijana")
+plt.title("Spektralna analiza: Sopstvene vrednosti Laplasijana (prvih 10)")
 plt.grid(True)
 plt.show()
 
@@ -324,45 +335,22 @@ num_connected_components = np.sum(np.isclose(eigenvalues, 0))
 print(f"Broj povezanih komponenti (nula sopstvene vrednosti): {num_connected_components}")
 
 
-comp_gen = girvan_newman(graph)
+comp_gen = girvan_newman(graph_undirected)
 
 levels = []
 for communities in comp_gen:
     level = [list(c) for c in communities]
     levels.append(level)
-    if len(levels) >= graph.number_of_nodes() - 1:  
+    if len(levels) >= graph_undirected.number_of_nodes() - 1:  
         break
 
-nodes = list(graph.nodes())
+nodes = list(graph_undirected.nodes())
 n = len(nodes)
-dist_matrix = np.zeros((n, n))
-
-for level_idx, communities in enumerate(levels):
-    for i, comm1 in enumerate(communities):
-        for j, comm2 in enumerate(communities):
-            if i >= j:
-                continue
-            for node1 in comm1:
-                for node2 in comm2:
-                    idx1 = nodes.index(node1)
-                    idx2 = nodes.index(node2)
-                   
-                    if dist_matrix[idx1, idx2] == 0:
-                        dist_matrix[idx1, idx2] = level_idx + 1
-                        dist_matrix[idx2, idx1] = level_idx + 1
-
-max_level = len(levels)
-if max_level == 0:
-    max_level = 1
-for i in range(n):
-    for j in range(i + 1, n):
-        if dist_matrix[i, j] == 0:
-            dist_matrix[i, j] = max_level + 1
-            dist_matrix[j, i] = max_level + 1
-
-condensed_dist = squareform(dist_matrix)
-
-Z = linkage(condensed_dist, method='average')
+adj_matrix = nx.to_numpy_array(graph_undirected)
+dist_matrix = 1 / (1 + adj_matrix)
+np.fill_diagonal(dist_matrix, 0)
+condensed_dist_matrix = squareform(dist_matrix)
+Z = linkage(squareform(dist_matrix), method='ward')
 
 plt.figure(figsize=(20, 8))
 dendrogram(Z, labels=nodes, leaf_rotation=90, leaf_font_size=8)
