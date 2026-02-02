@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
+import os
 
 filePath = 'data-set/Results 1_anonymized.csv'
 
@@ -155,7 +156,7 @@ plt.hist(local_clust_values, bins=10, color='skyblue', edgecolor='black')
 plt.title("Distribution of Local Clustering Coefficients")
 plt.xlabel("Clustering Coefficient")
 plt.ylabel("Frequency")
-plt.savefig("pictures\Distribution of Local Clustering Coefficients DZ1Net.png", bbox_inches='tight')
+plt.savefig(os.path.join("pictures_from_code", "DZ1NetDistribution of Local Clustering Coefficients.png"), bbox_inches='tight')
 plt.close()
 
 # Question 6
@@ -186,7 +187,7 @@ plt.xlabel("Node Degree (k)")
 plt.ylabel("Average Neighbor Degree (knn)")
 plt.legend()
 plt.grid(True, linestyle='--', alpha=0.6)
-plt.savefig(f"pictures\Assortativity_Degree_Analysis DZ1Net.png", bbox_inches='tight')
+plt.savefig(os.path.join("pictures_from_code", "DZ1NetAssortativity_Degree_Analysis.png"), bbox_inches='tight')
 plt.close()
 
 print(f"\n--- Question 6 Results ---")
@@ -220,7 +221,7 @@ plt.title(f"Degree Distribution & Power Law Fit (alpha={alpha:.2f})")
 plt.xlabel("Degree (k)")
 plt.ylabel("P(k)")
 plt.legend()
-plt.savefig(f"pictures\Degree_Distribution_PowerLaw DZNet1.png", bbox_inches='tight')
+plt.savefig(os.path.join("pictures_from_code", "DZ1NetDegree_Distribution_PowerLaw.png"), bbox_inches='tight')
 plt.close()
 
 print(f"\n--- Question 7 Results ---")
@@ -293,9 +294,6 @@ print(top_hubs[['Node', 'Hub_Score']])
 # Based on the previous two questions, propose and construct a heuristic (composite measure of centrality) to find the most important actors and find them.
 # Pay attention to the type of network being analyzed (directed or undirected) and, accordingly, adjust how different network metrics affect the heuristics.
 
-import pandas as pd
-import networkx as nx
-
 # 1. Calculate the core metrics for the directed graph
 in_degree = nx.in_degree_centrality(graph)
 hubs, authorities = nx.hits(graph)
@@ -325,3 +323,64 @@ print(top_final[['Node', 'CSI_Score', 'InDeg_Norm', 'Auth_Norm']])
 
 # In order to answer other questions, we export the graph we created and worked on into a gephi-ready format
 nx.write_gexf(graph, "gephi\DZ1Net_gephi.gexf")
+
+
+# Question 13 and 14
+# Conduct spectral analysis and evaluate potential candidates for the number of communes in the network.
+# Compare the result with the dendrogram constructed by the Girvan-Newman method.
+# Who are the actors that can be characterized as key brokers (bridges) in the network?
+# What makes them brokers? Compare the answer with the key nodes obtained from the centrality analysis.
+
+# We return to Python for Questions 13 and 14.
+# GEPHI doesn't provide in-built Girvan-Newman method, so we will have to use NetworkX
+from scipy.linalg import eigh
+import scipy.cluster.hierarchy as sch
+from scipy.spatial.distance import squareform
+
+# 1. Prepare the Undirected Graph
+undirected_g = graph.to_undirected()
+
+# --- SPECTRAL ANALYSIS ---
+L = nx.laplacian_matrix(undirected_g).toarray()
+vals, vecs = eigh(L)
+vals = np.sort(vals)
+
+plt.figure(figsize=(10, 5))
+plt.plot(range(1, 11), vals[:10], 'b*-')
+plt.title("Spectral Analysis: First 10 Eigenvalues (Find the Eigengap)")
+plt.xlabel("Number of Clusters")
+plt.ylabel("Eigenvalue")
+plt.grid(True)
+plt.savefig(os.path.join("pictures_from_code", "DZ1NetSpectralAnalysis.png"))
+plt.close()
+
+# --- GIRVAN-NEWMAN HIERARCHY ---
+comp = nx.community.girvan_newman(undirected_g)
+level_1 = next(comp)
+level_2 = next(comp)
+level_3 = next(comp)
+level_4 = next(comp)
+
+# print(f"GN Level 1 splits into: {len(level_1)} clusters") -> 2 clusters
+# print(f"GN Level 2 splits into: {len(level_2)} clusters") -> 3 clusters
+# print(f"GN Level 3 splits into: {len(level_3)} clusters") -> 4 clusters
+# print(f"GN Level 4 splits into: {len(level_4)} clusters") -> 5 clusters
+
+# --- DENDROGRAM VISUALIZATION ---
+# Using Ward's method on the distance matrix derived from the graph
+adj_matrix = nx.to_numpy_array(undirected_g)
+# We treat similarity as inverse distance: more similarity = less distance
+dist_matrix = 1 / (1 + adj_matrix)
+np.fill_diagonal(dist_matrix, 0)
+
+# Generate the linkage matrix
+Z = sch.linkage(squareform(dist_matrix), method='ward')
+
+plt.figure(figsize=(12, 7))
+sch.dendrogram(Z, labels=list(graph.nodes()), leaf_rotation=90, leaf_font_size=10, color_threshold=0.7 * max(Z[:,2]))
+
+plt.title('Hierarchical Clustering Dendrogram (Girvan-Newman Structural Logic)')
+plt.xlabel('Student ID')
+plt.ylabel('Distance (Structural Dissimilarity)')
+plt.savefig(os.path.join("pictures_from_code", "DZ1NetDendogram.png"))
+plt.close()
